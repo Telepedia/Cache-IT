@@ -1,0 +1,32 @@
+
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "telepedia-cache-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-04-16",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"NO_CACHE_COOKIES": [ 
+			"telepedia_session", 
+			"wgToken",
+			"wgSession",
+			"wgUser",
+			"betacentralauth_Session",
+			"betacentralauth_User",
+			"betacentralauth_ss0-User",
+			"centralauth_Session",
+			"centralauth_User",
+			"ss0-betacentralauth_Session",
+		],
+		"PAGE_TTL": 86400,
+		"MISSING_TTL": 3600,
+		"NAMESPACES_INELIGIBLE_FOR_CACHE": [
+			"MediaWiki",
+			"Special",
+			"Module"
+		]
+	  }
+}

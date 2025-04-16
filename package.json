@@ -1,0 +1,23 @@
+{
+	"name": "telepedia-cache-worker",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"test": "vitest",
+		"cf-typegen": "wrangler types"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.7.5",
+		"@cloudflare/workers-types": "^4.20250416.0",
+		"@types/node": "^22.14.1",
+		"typescript": "^5.5.2",
+		"vitest": "~3.0.7",
+		"wrangler": "^4.11.1"
+	},
+	"dependencies": {
+		"cookie": "^1.0.2"
+	}
+}
