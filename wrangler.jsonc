@@ -8,6 +8,9 @@
 	"observability": {
 		"enabled": true
 	},
+	"routes": [
+		"*.telepedia.net/*"
+	],
 	"vars": {
 		"NO_CACHE_COOKIES": [ 
 			"telepedia_session", 
