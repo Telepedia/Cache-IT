@@ -27,6 +27,10 @@
 			"MediaWiki",
 			"Special",
 			"Module"
+		],
+		"IMAGE_TTL": 604800,
+		"NO_CACHE_DOMAINS": [
+			"auth.telepedia.net"
 		]
 	  }
 }
