@@ -107,27 +107,49 @@ export class MediaWikiRequest {
 
     async fetch(): Promise<MediaWikiResponse> {
         const targetArticle = this.targetArticle;
-
+        const isImage = /\.(jpg|jpeg|png|gif|svg|webp)$/i.test( this.url.pathname );
+        
         if ( this.shouldCache && targetArticle && this.url.pathname === '/index.php' ) {
             const { ns, title } = targetArticle;
             this.url.pathname = `/wiki/${ ns ? `${ns}:` : ""}${title}`;
             this.url.search = "";
             this.req = new Request( this.url.toString(), this.req );
         }
-
-        const res = await fetch( this.req, {
-            cf: {
-                cacheTtlByStatus: this.shouldCache ? {
+    
+        // Create fetch options
+        const fetchOptions: any = { cf: {} };
+        
+        // For regular cacheable content
+        if ( this.shouldCache ) {
+            fetchOptions.cf = {
+                cacheTtlByStatus: {
                     '200': this.env.PAGE_TTL,
                     '300-399': -1,
                     '404': this.env.MISSING_TTL,
                     '410': -1, // Telepedia shows a 410 error for a missing wiki, don't cache
                     '500-599': -1,
-                } : undefined,
-                cacheEverything: this.shouldCache
-            }
-        });
-
+                },
+                cacheEverything: true
+            };
+        } 
+        // For images, lets cache them irregardless of the shouldCache boolean
+        else if ( isImage ) {
+            fetchOptions.cf = {
+                cacheTtlByStatus: {
+                    '200': this.env.IMAGE_TTL,
+                    '404': this.env.MISSING_TTL,
+                    '500-599': -1,
+                },
+                cacheEverything: true
+            };
+        } 
+        else {
+            fetchOptions.cf = {
+                cacheEverything: false
+            };
+        }
+    
+        const res = await fetch( this.req, fetchOptions );
         return new MediaWikiResponse( res );
     }
 }
