@@ -6,7 +6,7 @@
 	"compatibility_date": "2025-04-16",
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
-		"enabled": true
+		"enabled": false
 	},
 	"routes": [
 		"*.telepedia.net/*"
