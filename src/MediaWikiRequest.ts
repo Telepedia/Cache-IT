@@ -11,11 +11,6 @@ const INELIGIBLE_QUERY_PARAMS = [
     'redirect'
 ];
 
-interface Article {
-    ns: string;
-    title: string;
-}
-
 export class MediaWikiRequest {
     private req: Request;
     private env: Env;
@@ -35,142 +30,101 @@ export class MediaWikiRequest {
         this.url = new URL( this.req.url );
     }
 
-    extractArticle( title: string | null): Article | null {
-        if ( !title ) {
-            return {
-                ns: '',
-                title: 'Main_Page'
-            }
-        }
-
-        let [ ns, articleTitle ] = title.split( ':' );
-
-        if ( articleTitle === '' ) {
-            return null;
-        } else if ( !articleTitle ) {
-            articleTitle = ns;
-            ns = '';
-        }
-
-        return {
-            ns, title: articleTitle
-        }
-    }
-
     /**
-     * Strip language prefix from pathname if present
-     * e.g. /fr/wiki/Article -> /wiki/Article
+     * Try to see if we can cache this page. This is purely an optimisation of kind
+     * since we know beforehand that some requests should be cached or not. It is intended to check
+     * common cases like a session cookie etc. 
+     * MediaWiki is ultimately the decider, and we respect the cahce control header emitted
      */
-    private stripLanguagePrefix(pathname: string): string {
-        const langPrefixPattern = /^\/([a-z]{2,3}(-[A-Z]{2})?)(\/|$)/;
-        const match = pathname.match(langPrefixPattern);
-        
-        if (match) {
-            // for the purpose of checking whether an article is cacheable, ignore the 
-            // language path -> if its cacheable in english, its cacheable in french
-            return pathname.slice(match[1].length + 1) || '/';
-        }
-        
-        return pathname;
-    }
-
-    get targetArticle(): Article | null {
-        const pathname = this.stripLanguagePrefix(this.url.pathname);
-
-        if ( pathname === '/index.php' ) {
-            const title = this.url.searchParams.get( 'title' );
-            return this.extractArticle( title );
-        } else if ( pathname === '/' ) {
-            return {
-                ns: '',
-                title: 'Main_Page'
-            };
-        } else if ( pathname.startsWith( '/wiki/' ) ) {
-             return this.extractArticle( pathname.slice( 6) );
-        }
-        return null;
-    }
-
-    get shouldCache(): boolean {
-        const pathname = this.stripLanguagePrefix(this.url.pathname);
-
-        // explicitly pass api.php and rest.php through cache
-        if (pathname === '/api.php' || pathname === '/rest.php') {
-            return false;
+    private get canTryCache(): boolean {
+        // For static files, always try to cache them.
+        if (this.url.hostname.startsWith('static.')) {
+            return true;
         }
 
+        // don't cache if a session cookie is present
         for ( const cookieName of this.env.NO_CACHE_COOKIES ) {
             if ( this.cookies[ cookieName ] ) {
                 return false;
             }
         }
 
-        const article = this.targetArticle;
-        if ( !article ) {
-            return false;
-        }
-
         if ( INELIGIBLE_QUERY_PARAMS.some( key => this.url.searchParams.has( key) ) ) {
-            return false;
+            return false; 
         }
-
-        // since we allow wikis to create custom namespaces, or alternatively, an extension may add a namespace
-        // we cannot account for setting namespaces that CAN be cached, we must do the inverse and list all of the
-        // namespaces that SHOULD NOT be cahced instead.
-        const noCacheNamespaces: string[] = this.env.NAMESPACES_INELIGIBLE_FOR_CACHE;
-        if ( noCacheNamespaces.includes( article.ns ) ) {
-            return false;
-        }
-
+        
+        // This request looks like an anonymous page view.
+        // It's eligible to be checked whether we can cache it
+        // this requires a trip to the origin to check what cache control
+        // header MediaWiki sent, but its a one-shot pony as it will be cached
+        // if MediaWiki deemed eligible.
         return true;
     }
 
+    /**
+     * Normalise some stuff in the URL to improve cache hit ratio.
+     * @returns 
+     */
+    private normalizeUrl(): void {
+        const pathname = this.url.pathname;
+
+        // Only normalize /index.php if it's not an action URL
+        if ( pathname === '/index.php' ) {
+            const title = this.url.searchParams.get( 'title' );
+
+            if ( title ) {
+                let [ ns, articleTitle ] = title.split( ':' );
+
+                if ( articleTitle === '' ) {
+                    return; // invalid so don't normalise
+                } else if ( !articleTitle ) {
+                    articleTitle = ns;
+                    ns = '';
+                }
+
+                this.url.pathname = `/wiki/${ ns ? `${ns}:` : ""}${articleTitle}`;
+                this.url.search = "";
+                this.req = new Request( this.url.toString(), this.req );
+            }
+        }
+    }
+
+
+    /**
+     * Fetch the page from the origin and decide whether we cache it
+     * @returns
+     */
     async fetch(): Promise<MediaWikiResponse> {
-	    const targetArticle = this.targetArticle;
-	    
-	    // Check if this is a static file domain, this avoids the ugly regex we had previously where
-		// file description pages et al would be cached?!
-	    const isStaticFile = this.url.hostname.startsWith('static.');
-	    
-	    if ( this.shouldCache && targetArticle && this.url.pathname === '/index.php' ) {
-	        const { ns, title } = targetArticle;
-	        this.url.pathname = `/wiki/${ ns ? `${ns}:` : ""}${title}`;
-	        this.url.search = "";
-	        this.req = new Request( this.url.toString(), this.req );
-	    }
-	
-	    const fetchOptions: any = { cf: {} };
-	    
-	    if ( this.shouldCache ) {
-	        fetchOptions.cf = {
-	            cacheTtlByStatus: {
-	                '200': this.env.PAGE_TTL,
-	                '300-399': -1,
-	                '404': this.env.MISSING_TTL,
-	                '410': -1, // Telepedia shows a 410 error for a missing wiki, don't cache
-	                '500-599': -1,
-	            },
-	            cacheEverything: true
-	        };
-	    } 
-	    // For static files, cache them regardless of login state
-	    else if ( isStaticFile ) {
-	        fetchOptions.cf = {
-	            cacheTtlByStatus: {
-	                '200': this.env.IMAGE_TTL,
-	                '404': this.env.MISSING_TTL,
-	                '500-599': -1,
-	            },
-	            cacheEverything: true
-	        };
-	    } 
-	    else {
-	        fetchOptions.cf = {
-	            cacheEverything: false
-	        };
-	    }
-	
-	    const res = await fetch( this.req, fetchOptions );
-	    return new MediaWikiResponse( res );
-	}
+        const fetchOptions: any = { cf: {} };
+        const isStaticFile = this.url.hostname.startsWith('static.');
+
+        if ( this.canTryCache ) {
+            // This request is eligible for caching.
+            // Normalise the URL to improve cache HIT ratio.
+            this.normalizeUrl();
+
+            fetchOptions.cf = {
+                // Tell CF to cache this is it is eligible; MediaWiki will ultimately
+                // decide
+                cacheEverything: true,
+                cacheTtlByStatus: {
+                    '200': isStaticFile ? this.env.IMAGE_TTL : this.env.PAGE_TTL,
+                    '300-399': -1,
+                    '404': this.env.MISSING_TTL,
+                    '410': -1, // Telepedia shows a 410 error for a missing wiki, don't cache
+                    '500-599': -1,
+                },
+            };
+        } 
+        else {
+            // This request is not eligible for caching (e.g., logged in).
+            // bypass
+            fetchOptions.cf = {
+                cacheEverything: false
+            };
+        }
+    
+        const res = await fetch( this.req, fetchOptions );
+        return new MediaWikiResponse( res );
+    }
 }

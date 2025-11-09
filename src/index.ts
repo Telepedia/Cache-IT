@@ -71,18 +71,6 @@ export default {
 			cacheStatus
 		});
 
-		if ( !request.shouldCache || !response.res.ok ) {
-
-			log({
-				event: 'ineligible_for_cache',
-				cookies: Object.keys(request.cookies),
-				path: request.url.pathname,
-				qs: [...request.url.searchParams.entries()],
-			  });
-		
-			  return response.res;
-		}
-
 		return response.res;
 	}
 } satisfies ExportedHandler<Env>;
