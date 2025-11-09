@@ -57,25 +57,45 @@ export class MediaWikiRequest {
         }
     }
 
+    /**
+     * Strip language prefix from pathname if present
+     * e.g. /fr/wiki/Article -> /wiki/Article
+     */
+    private stripLanguagePrefix(pathname: string): string {
+        const langPrefixPattern = /^\/([a-z]{2,3}(-[A-Z]{2})?)(\/|$)/;
+        const match = pathname.match(langPrefixPattern);
+        
+        if (match) {
+            // for the purpose of checking whether an article is cacheable, ignore the 
+            // language path -> if its cacheable in english, its cacheable in french
+            return pathname.slice(match[1].length + 1) || '/';
+        }
+        
+        return pathname;
+    }
+
     get targetArticle(): Article | null {
-        if ( this.url.pathname === '/index.php' ) {
+        const pathname = this.stripLanguagePrefix(this.url.pathname);
+
+        if ( pathname === '/index.php' ) {
             const title = this.url.searchParams.get( 'title' );
             return this.extractArticle( title );
-        } else if ( this.url.pathname === '/' ) {
+        } else if ( pathname === '/' ) {
             return {
                 ns: '',
                 title: 'Main_Page'
             };
-        } else if ( this.url.pathname.startsWith( '/wiki/' ) ) {
-            return this.extractArticle( this.url.pathname.slice( 6) );
+        } else if ( pathname.startsWith( '/wiki/' ) ) {
+             return this.extractArticle( pathname.slice( 6) );
         }
         return null;
     }
 
     get shouldCache(): boolean {
-        
+        const pathname = this.stripLanguagePrefix(this.url.pathname);
+
         // explicitly pass api.php and rest.php through cache
-        if (this.url.pathname === '/api.php' || this.url.pathname === '/rest.php') {
+        if (pathname === '/api.php' || pathname === '/rest.php') {
             return false;
         }
 
