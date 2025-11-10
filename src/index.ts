@@ -71,6 +71,22 @@ export default {
 			cacheStatus
 		});
 
-		return response.res;
+		// vary on cookies
+		const headers = new Headers(response.res.headers);
+		
+		const existingVary = headers.get('Vary');
+		if (existingVary && !existingVary.includes('Cookie')) {
+			headers.set('Vary', `${existingVary}, Cookie`);
+		} else if (!existingVary) {
+			headers.set('Vary', 'Cookie');
+		}
+		
+		const finalResponse = new Response(response.res.body, {
+			status: response.res.status,
+			statusText: response.res.statusText,
+			headers: headers
+		});
+
+		return finalResponse;
 	}
 } satisfies ExportedHandler<Env>;
