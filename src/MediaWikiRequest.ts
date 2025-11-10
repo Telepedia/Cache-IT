@@ -24,7 +24,7 @@ export class MediaWikiRequest {
 
 	/**
 	 * Checks if the user has a session cookie.
-     * This pretty fucked but seems to work?!
+	 * This pretty fucked but seems to work?!
 	 */
 	private get isLoggedIn(): boolean {
 		for (const cookieName of this.env.NO_CACHE_COOKIES) {
@@ -49,10 +49,10 @@ export class MediaWikiRequest {
 		}
 
 		// This request looks like an anonymous page view.
-        // It's eligible to be checked whether we can cache it
-        // this requires a trip to the origin to check what cache control
-        // header MediaWiki sent, but its a one-shot pony as it will be cached
-        // if MediaWiki deemed eligible.
+		// It's eligible to be checked whether we can cache it
+		// this requires a trip to the origin to check what cache control
+		// header MediaWiki sent, but its a one-shot pony as it will be cached
+		// if MediaWiki deemed eligible.
 		return true;
 	}
 
@@ -76,8 +76,10 @@ export class MediaWikiRequest {
 					ns = '';
 				}
 
+				// Update the path but keep all other query parameters this is fucked
 				this.url.pathname = `/wiki/${ns ? `${ns}:` : ''}${articleTitle}`;
-				this.url.search = '';
+				this.url.searchParams.delete('title');
+
 				this.req = new Request(this.url.toString(), this.req);
 			}
 		}
