@@ -15,7 +15,7 @@
 		"@types/node": "^22.14.1",
 		"typescript": "^5.5.2",
 		"vitest": "~3.0.7",
-		"wrangler": "^4.11.1"
+		"wrangler": "^4.62.0"
 	},
 	"dependencies": {
 		"cookie": "^1.0.2"

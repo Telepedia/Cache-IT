@@ -26,7 +26,7 @@ export class MediaWikiRequest {
 	 * Checks if the user has a session cookie.
 	 * This pretty fucked but seems to work?!
 	 */
-	private get isLoggedIn(): boolean {
+	get isLoggedIn(): boolean {
 		for (const cookieName of this.env.NO_CACHE_COOKIES) {
 			if (this.cookies[cookieName]) {
 				return true;
@@ -35,52 +35,31 @@ export class MediaWikiRequest {
 		return false;
 	}
 
-	/**
-	 * See if we can cache this page type
-	 */
-	private get isCacheablePageType(): boolean {
-		// For static files, always try to cache them.
-		if (this.url.hostname.startsWith('static.')) {
+	get shouldBypassCache(): boolean {
+		if (INELIGIBLE_QUERY_PARAMS.some( ( key) => this.url.searchParams.has( key ) ) ) {
 			return true;
 		}
-
-		if (INELIGIBLE_QUERY_PARAMS.some((key) => this.url.searchParams.has(key))) {
-			return false;
-		}
-
-		// This request looks like an anonymous page view.
-		// It's eligible to be checked whether we can cache it
-		// this requires a trip to the origin to check what cache control
-		// header MediaWiki sent, but its a one-shot pony as it will be cached
-		// if MediaWiki deemed eligible.
-		return true;
+		return this.isLoggedIn;
 	}
 
 	/**
 	 * Normalise some stuff in the URL to improve cache hit ratio.
 	 * @returns
 	 */
-	private normalizeUrl(): void {
+	normaliseUrl() {
 		const pathname = this.url.pathname;
-
-		if (pathname === '/index.php') {
-			const title = this.url.searchParams.get('title');
-
-			if (title) {
-				let [ns, articleTitle] = title.split(':');
-
-				if (articleTitle === '') {
-					return; // invalid so don't normalise
-				} else if (!articleTitle) {
+		if ( pathname === "/index.php" ) {
+			const title = this.url.searchParams.get( "title" );
+			if ( title ) {
+				let [ ns, articleTitle ] = title.split(":");
+				if ( articleTitle === "" ) return;
+				else if ( !articleTitle ) {
 					articleTitle = ns;
-					ns = '';
+					ns = "";
 				}
-
-				// Update the path but keep all other query parameters this is fucked
-				this.url.pathname = `/wiki/${ns ? `${ns}:` : ''}${articleTitle}`;
-				this.url.searchParams.delete('title');
-
-				this.req = new Request(this.url.toString(), this.req);
+				this.url.pathname = `/wiki/${ns ? `${ns}:` : ""}${articleTitle}`;
+				this.url.searchParams.delete( "title" );
+				this.req = new Request( this.url.toString(), this.req );
 			}
 		}
 	}
@@ -89,89 +68,25 @@ export class MediaWikiRequest {
 	 * Fetch the page from the origin and decide whether we cache it
 	 * @returns
 	 */
-	async fetch(): Promise<MediaWikiResponse> {
-		const isStaticFile = this.url.hostname.startsWith('static.');
-
-		this.normalizeUrl();
-
-		const loggedIn = this.isLoggedIn;
-
-		if (loggedIn) {
-			const fetchOptions: any = {
+	async fetch() {
+		this.normaliseUrl();
+		const bypassCache = this.shouldBypassCache;
+		let request = this.req;
+		if ( !bypassCache ) {
+			request = new Request( this.req, {
 				cf: {
-					cacheEverything: false,
-					cacheTtl: -1,
-				},
-			};
-			const res = await fetch(this.req, fetchOptions);
-			return new MediaWikiResponse(res);
+					cacheEverything: true
+				}
+			} );
 		}
-
-		if (!this.isCacheablePageType) {
-			const fetchOptions: any = {
-				cf: {
-					cacheEverything: false,
-					cacheTtl: -1,
-				},
-			};
-			const res = await fetch(this.req, fetchOptions);
-			return new MediaWikiResponse(res);
+		const response = await fetch( request );
+		const modifiableResponse = new Response(response.body, response);
+		if ( !bypassCache ) {
+			modifiableResponse.headers.set(
+				"Cache-Control",
+				"private, must-revalidate, max-age=0, stale-while-revalidate=90"
+			);
 		}
-
-		const cache = caches.default;
-		const cacheKeyRequest = new Request(this.req.url);
-
-		const cachedResponse = await cache.match(cacheKeyRequest);
-		if (cachedResponse) {
-			return new MediaWikiResponse(cachedResponse);
-		}
-
-		const fetchOptions: any = {
-			cf: {
-				cacheEverything: false,
-				cacheTtl: -1,
-			},
-		};
-
-		const res = await fetch(this.req, fetchOptions);
-		const status = res.status;
-
-		let shouldStore = false;
-		let cacheTtl: number | undefined;
-
-		if (status === 404) {
-			shouldStore = true;
-			cacheTtl = this.env.MISSING_TTL;
-		} else if (status === 200) {
-			shouldStore = true;
-			if (isStaticFile) {
-				cacheTtl = this.env.IMAGE_TTL;
-			}
-		} else if (status >= 300 && status <= 399) {
-			shouldStore = false;
-		} else if (status === 410 || (status >= 500 && status <= 599)) {
-			shouldStore = false;
-		}
-
-		if (shouldStore) {
-			const responseToCache = res.clone();
-
-			if (cacheTtl !== undefined) {
-				const newHeaders = new Headers(responseToCache.headers);
-				newHeaders.set('Cache-Control', `public, max-age=${cacheTtl}, s-maxage=${cacheTtl}`);
-
-				const cachedResponse = new Response(responseToCache.body, {
-					status: responseToCache.status,
-					statusText: responseToCache.statusText,
-					headers: newHeaders,
-				});
-
-				await cache.put(cacheKeyRequest, cachedResponse);
-			} else {
-				await cache.put(cacheKeyRequest, responseToCache);
-			}
-		}
-
-		return new MediaWikiResponse(res);
+		return new MediaWikiResponse(modifiableResponse);
 	}
 }

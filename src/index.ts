@@ -1,5 +1,5 @@
-import { MediaWikiRequest } from "./MediaWikiRequest";
-import { log } from "./logger";
+import { MediaWikiRequest } from './MediaWikiRequest';
+import { log } from './logger';
 
 const DOMAIN_REDIRECTS: Record<string, { newDomain: string; pathPrefix?: string }> = {
     'latelierdessorciers.telepedia.net': {
@@ -21,18 +21,18 @@ const DOMAIN_REDIRECTS: Record<string, { newDomain: string; pathPrefix?: string 
 function checkDomainRedirect(request: Request): Response | null {
     const url = new URL(request.url);
     const redirect = DOMAIN_REDIRECTS[url.hostname];
-    
+
     if (redirect) {
         const newUrl = new URL(url.href);
         newUrl.hostname = redirect.newDomain;
-        
+
         if (redirect.pathPrefix) {
             newUrl.pathname = redirect.pathPrefix + url.pathname;
         }
-        
+
         return Response.redirect(newUrl.toString(), 301);
     }
-    
+
     return null;
 }
 
@@ -41,7 +41,7 @@ export default {
 		ctx.passThroughOnException();
 
 		const redirect = checkDomainRedirect(req);
-		
+
         if (redirect) {
             return redirect;
         }
@@ -61,32 +61,17 @@ export default {
 			throw response;
 		}
 
+		// set state on the worker for debug purposes - not really used for much except debugging
 		const cacheStatus = response.res.headers.get( "cf-cache-status" );
+		const debugAuthState = request.isLoggedIn ? "LoggedIn" : "Anon";
 
-		log({
-			event: 'origin_response',
-			status: response.res.status,
-			ok: response.res.ok,
-			originRequestId: response.res.headers.get( "x-request-id" ),
-			cacheStatus
-		});
+		const headers = new Headers( response.res.headers );
+		headers.set( "X-Worker-Auth-State", debugAuthState );
 
-		// vary on cookies
-		const headers = new Headers(response.res.headers);
-		
-		const existingVary = headers.get('Vary');
-		if (existingVary && !existingVary.includes('Cookie')) {
-			headers.set('Vary', `${existingVary}, Cookie`);
-		} else if (!existingVary) {
-			headers.set('Vary', 'Cookie');
-		}
-		
-		const finalResponse = new Response(response.res.body, {
+		return new Response(response.res.body, {
 			status: response.res.status,
 			statusText: response.res.statusText,
-			headers: headers
+			headers
 		});
-
-		return finalResponse;
 	}
 } satisfies ExportedHandler<Env>;
